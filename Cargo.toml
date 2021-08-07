@@ -1,7 +1,10 @@
 [package]
 name = "winapi-tlb-bindgen"
 version = "0.1.0"
-authors = ["Arnavion <arnavion@gmail.com>"]
+authors = [
+  "Arnavion <arnavion@gmail.com>",
+  "Florian Eich <florian@bmc-labs.com>"
+]
 edition = "2018"
 
 [dependencies]
