@@ -1,3 +1,5 @@
+<p align="center"><img src="./misc/windows-logo.png" width="15%" /></p>
+
 # `winapi-tlb-bindgen`
 
 > Generates bindings to COM interfaces, enums and coclasses.
@@ -20,56 +22,94 @@ respectively.
    `.dll`.](https://docs.microsoft.com/en-us/cpp/preprocessor/hash-import-directive-cpp)
    If that compiles, then it should work with `winapi-tlb-bindgen`
 
-1. Write a build script that uses this crate to generate the bindgen output for
-   the COM library.
+1. Add your dependencies. You can either use the utilities of the crate
+   [`cargo-edit`](https://crates.io/crates/cargo-edit) to do that:
 
-   ```rust
-   // build.rs
-
-   winapi_tlb_bindgen::build(
-   	std::path::Path::new(r"C:\Program Files (x86)\Windows Kits\10\Lib\10.0.18362.0\um\x64\MsXml.Tlb"),
-   	false,
-   	out_file, // $OUT_DIR/msxml.rs
-   ).unwrap();
+   ```sh
+   # add winapi-tlb-bindgen to build deps from github
+   cargo add winapi-tlb-bindgen --git https://github.com/cdbrkfxrpt/winapi-tlb-bindgen.git --build
+   # add winapi to deps with the correct features
+   cargo add winapi@0.3.9 --features "objbase oleauto winerror"
+   # OPTIONAL: add anyhow for easier error handling
+   cargo add anyhow@1 --build
+   cargo add anyhow@1
    ```
 
-1. Add an empty mod file that `include!`s the bindgen output.
+   The features for the `winapi` create give you access to things like
+   `HRESULT`, `IUnknown` and other COM types. You may want to enable other
+   features for the things you need.
 
-   ```rust
-   // src/msxml.rs
+   Alternatively, you can add the dependencies manually to your `Cargo.toml`,
+   which should then look at least like this:
 
-   include!(concat!(env!("OUT_DIR"), "/msxml.rs"));
+   ```toml
+   [dependencies]
+   anyhow = "1"
+   winapi = { version = "0.3.9", features = ["objbase", "oleauto", "winerror"] }
+
+
+   [build-dependencies]
+   anyhow = "1"
+   winapi-tlb-bindgen = { git = "https://gitlab.bmc-labs.com/libraries/winapi-tlb-bindgen.git" }
    ```
 
-1. Add a dependency to your crate on [`winapi = { version = "0.3.6" }`](https://docs.rs/winapi/0.3.x/x86_64-pc-windows-msvc/winapi/) You will
-   likely want to enable (atleast) the `objbase`, `oleauto`, and `winerror`
-   features to get access to `HRESULT`, `IUnknown` and other COM types.
-
-1. Build your crate.
-
-1. Silence warnings for identifier names and unused functions as necessary, and
-   prepend imports from winapi for any types the compiler can't find.
+1. Add a build script `build.rs` in the project root, right next to the
+   `Cargo.toml` file. The build script has to use this crate to generate the
+   bindgen output for the COM library, like so:
 
    ```rust
-   // src/msxml.rs
+   use anyhow::Result; // optional; used to let main return `Result`
+   use std::{env, fs, path::Path};
 
+   fn main() -> Result<()> {
+     // the TLB file is the input; it contains the library spec
+     let tlb_filepath = Path::new("path/to/tlb_file").join("my_lib.tlb");
+
+     // the bindings path is where we are going to write our lib bindings
+     let bindings_path = Path::new(&env::var("OUT_DIR")?).join("my_lib.rs");
+
+     // let's generate some bindings
+     winapi_tlb_bindgen::build(&tlb_filepath,
+                               false,
+                               fs::File::create(bindings_path)?)?;
+
+     // if we made it here, things went swell
+     Ok(())
+   }
+   ```
+
+1. Generate the bindgen output in your main code. You can do this simply above
+   your main or at the beginning of your `lib.rs`, but adding a module for this
+   purpose is probably more convenient:
+
+   ```rust
+   // src/my_lib.rs
+
+   // silence warnings for identifier names and unused functions
    #![allow(non_camel_case_types, non_snake_case, unused)]
 
-   use winapi::{ENUM, RIDL, STRUCT};
-   use winapi::shared::guiddef::GUID;
-   use winapi::shared::minwindef::UINT;
-   use winapi::shared::winerror::HRESULT;
-   use winapi::shared::wtypes::{BSTR, VARIANT_BOOL};
-   use winapi::um::oaidl::{IDispatch, IDispatchVtbl, LPDISPATCH, VARIANT};
-   use winapi::um::unknwnbase::{IUnknown, IUnknownVtbl, LPUNKNOWN};
+   use winapi::{shared::{guiddef::GUID,
+                         minwindef::{INT, UINT},
+                         winerror::HRESULT,
+                         wtypes::{BSTR, DATE, VARIANT_BOOL}},
+                um::{oaidl::{IDispatch, IDispatchVtbl, LPDISPATCH, VARIANT},
+                     unknwnbase::{IUnknown, IUnknownVtbl, LPUNKNOWN}},
+                ENUM,
+                RIDL,
+                STRUCT};
 
-   include!(concat!(env!("OUT_DIR"), "/msxml.rs"));
+   include!(concat!(env!("OUT_DIR"), "/my_lib.rs"));
    ```
 
-   Repeat till there are no more missing imports and the crate compiles.
+   You may need to adapt the `winapi` imports to your use case. Compiler
+   warnings will give you guidance.
 
-   ([Issue #2](https://github.com/Arnavion/winapi-tlb-bindgen/issues/2) is
-   about automating this step or atleast making it easier.)
+   ```rust
+   // src/main.rs or src/lib.rs
+   mod my_lib;
+   ```
+
+1. Build your crate.
 
 1. Compare the output against [the C++ headers generated by MSVC with
    `#import`.](https://docs.microsoft.com/en-us/cpp/preprocessor/hash-import-directive-cpp#_predir_the_23import_directive_header_files_created_by_import)
